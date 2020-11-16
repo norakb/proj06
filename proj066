@@ -1,0 +1,82 @@
+#! /usr/bin/python3
+
+import cgi
+import MySQLdb
+import passwords
+import os
+import cgitb
+import sys
+cgitb.enable()
+
+conn = MySQLdb.connect(host = passwords.SQL_HOST,
+user = passwords.SQL_USER,
+passwd = passwords.SQL_PASSWD,
+db = "mydb")
+
+"""
+Inserts row into table. Deletes oldest entry if length exceeds MAX.
+"""
+def add_entry(data):
+    try:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO entries(time, message) VALUES(NOW(), %s);", (data,))
+        cursor.close()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM entries ORDER BY time;")
+        entries = cursor.fetchall()
+        cursor.close()
+        MAX = 10
+        curr = len(entries)
+        for entry in entries:
+            if curr > MAX:
+                curr -= 1
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM entries WHERE id = %s;", (entry,))
+                cursor.close()
+        conn.commit()
+        print("Status: 302 Redirect")
+        print("Location: http://ec2-3-85-175-157.compute-1.amazonaws.com/cgi-bin/proj06/getinfo")
+        print()
+    except:
+        print("Status: 400 Bad Request")
+        print()
+
+"""
+Prints out SQL table as HTML table.
+"""
+def read_table():
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM entries;")
+    print("Status: 200 OK")
+    print("Content-type: text/html")
+    print()
+    results = cursor.fetchall()
+    print("<table>")
+    for rec in results:
+        id, time, message = rec
+        print(f"<tr><td>{time}</td>")
+        print(f"<td><div><pre>{message}</pre></div></td> </tr>")
+    print("</table>")
+
+
+"""
+Checking what action to take
+"""
+my_path = os.environ["PATH_INFO"]
+method = os.environ["REQUEST_METHOD"]
+
+if my_path == "/postinfo" and method == "POST":
+    input_data = sys.stdin.read()
+    if not input_data:
+        print("Status: 400 Bad Request")
+        print("Content-Type: text/html")
+        print()
+    else:
+        add_entry(input_data)
+
+elif my_path == "/getinfo" and method == "GET":
+    read_table()
+
+else:
+    print("Status: 405 Forbidden")
+    print()
